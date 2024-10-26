@@ -1,9 +1,8 @@
-// static/assets/js/public-ip.js
-
 const PublicIPTool = {
     init() {
         this.loadingIndicator = document.getElementById('loading-indicator');
         this.ipDetails = document.getElementById('ip-details');
+        this.mapContainer = document.getElementById('map');
         this.map = null;
         this.fetchIPInfo();
     },
@@ -11,18 +10,33 @@ const PublicIPTool = {
     async fetchIPInfo() {
         try {
             this.showLoading();
-            const response = await fetch('/get-ip-info');
+
+            // First, try to get the IP information using a third-party API
+            const response = await fetch('https://ipapi.co/json/');
             const data = await response.json();
-            
-            if (data.error) {
-                throw new Error(data.error);
-            }
 
             this.displayIPInfo(data);
             this.initializeMap(data.latitude, data.longitude);
             this.hideLoading();
         } catch (error) {
-            this.showError('Failed to fetch IP information: ' + error.message);
+            console.error('Error fetching IP information from third-party API:', error);
+
+            // If third-party API fails, fall back to server-side
+            try {
+                const serverResponse = await fetch('/get-ip-info');
+                const serverData = await serverResponse.json();
+
+                if (serverData.error) {
+                    throw new Error(serverData.error);
+                }
+
+                this.displayIPInfo(serverData);
+                this.initializeMap(serverData.latitude, serverData.longitude);
+            } catch (serverError) {
+                this.showError('Failed to fetch IP information: ' + serverError.message);
+            } finally {
+                this.hideLoading();
+            }
         }
     },
 
@@ -30,23 +44,23 @@ const PublicIPTool = {
         // Update all information fields
         const fields = {
             'ip-address': data.ip,
-            'country': data.country_name,
-            'region': data.region,
-            'city': data.city,
-            'postal': data.postal,
-            'timezone': data.timezone,
-            'isp': data.org,
-            'org': data.org,
-            'asn': data.asn,
+            'country': data.country_name || 'N/A',
+            'region': data.region_name || 'N/A',
+            'city': data.city || 'N/A',
+            'postal': data.postal || 'N/A',
+            'timezone': data.timezone || 'N/A',
+            'isp': data.org || 'N/A',
+            'org': data.org || 'N/A',
+            'asn': data.asn || 'N/A',
             'hostname': data.hostname || 'N/A',
-            'latitude': data.latitude,
-            'longitude': data.longitude
+            'latitude': data.latitude || null,
+            'longitude': data.longitude || null
         };
 
         Object.keys(fields).forEach(id => {
             const element = document.getElementById(id);
             if (element) {
-                element.textContent = fields[id] || 'N/A';
+                element.textContent = fields[id];
             }
         });
 
@@ -57,17 +71,24 @@ const PublicIPTool = {
     },
 
     initializeMap(lat, lng) {
-        if (!lat || !lng) return;
-        
-        const mapContainer = document.getElementById('map');
-        if (!mapContainer) return;
+        if (!lat || !lng || !this.mapContainer) return;
 
         // Clear any existing map
-        mapContainer.innerHTML = '';
-        
-        // Initialize the map (using your preferred map library)
-        // This is a placeholder - implement with your chosen map library
-        console.log('Map would be initialized with:', lat, lng);
+        this.mapContainer.innerHTML = '';
+
+        // Initialize the map
+        this.map = L.map(this.mapContainer).setView([lat, lng], 13);
+
+        // Load and display tile layers
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(this.map);
+
+        // Add a marker
+        L.marker([lat, lng]).addTo(this.map)
+            .bindPopup('Your IP Location')
+            .openPopup();
     },
 
     showLoading() {
